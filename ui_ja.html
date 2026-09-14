@@ -1,0 +1,91 @@
+<script>
+// Streamlit 1.63 has no UI locale setting. Translate only framework UI surfaces.
+(() => {
+  const translations = {
+    'Main menu': 'メニュー', 'Deploy': '公開', 'Rerun': '再実行',
+    'Auto rerun': '自動再実行', 'Always rerun': '常に自動再実行',
+    'Clear cache': 'キャッシュを消去', 'Print': '印刷',
+    'Record screen': '画面を録画', 'Stop recording': '録画を停止',
+    'Start recording': '録画を開始', 'Record audio': '音声も録音',
+    'Copy version to clipboard': 'バージョン情報をコピー',
+    'Upload': 'ファイルを選択', 'Browse files': 'ファイルを選択',
+    'file upload': 'ファイルをアップロード',
+    'Drag and drop files here': 'ここにファイルをドラッグ＆ドロップ',
+    'Drag and drop file here': 'ここにファイルをドラッグ＆ドロップ',
+    'Close': '閉じる', 'Cancel': 'キャンセル', 'Save': '保存',
+    'Open': '開く', 'Stop': '停止', 'Running...': '実行中…',
+    'Connecting': '接続中', 'Connecting...': '接続中…',
+    'File change.': 'ファイルが更新されました。',
+    'Settings': '設定', 'About': 'このアプリについて',
+    'Get help': 'ヘルプ', 'Report a bug': '不具合を報告',
+    'Clear': '消去', 'Yes': 'はい', 'No': 'いいえ',
+    'Are you sure you want to clear the app\'s cache?': 'アプリのキャッシュを消去しますか？',
+    'Clear cache?': 'キャッシュを消去しますか？',
+    'This will remove all cached data and resources.': 'キャッシュされたデータとリソースをすべて削除します。',
+    'Copy to clipboard': 'クリップボードにコピー', 'Copied!': 'コピーしました',
+    'Copy': 'コピー', 'Download': 'ダウンロード',
+    'Deploy this app using...': 'このアプリの公開方法',
+    'For community, always free': 'コミュニティ向け・無料',
+    'For personal hobbies and learning': '個人の趣味や学習向け',
+    'Deploy unlimited public apps': '公開アプリを数の制限なく配信',
+    'Explore and learn from Streamlit’s community and popular apps': 'コミュニティや人気アプリから学ぶ',
+    'Deploy now': '公開する', 'Learn more': '詳しく見る',
+    'For enterprise': '企業向け',
+    'Enterprise-level security, support, and fully managed infrastructure': '企業向けのセキュリティ・サポート・運用基盤',
+    'Deploy unlimited private apps with role-based sharing': '役割別の共有に対応した非公開アプリを配信',
+    'Integrate with Snowflake’s full data stack': 'Snowflakeのデータ基盤と連携',
+    'Start trial': '試用を開始', 'Other platforms': 'その他の環境',
+    'For custom deployment': '独自の配信環境向け',
+    'Deploy on your own hardware or cloud service': '自分のPCやクラウドサービスで公開',
+    'Set up and maintain your own authentication, resources, and costs': '認証・リソース・費用を自分で管理',
+    'Decrement': '減らす', 'Increment': '増やす',
+    'Link to heading': 'この見出しへのリンク',
+    'Collapse sidebar': '設定パネルを閉じる', 'Expand sidebar': '設定パネルを開く'
+  };
+  function translate(value) {
+    const key = value.trim();
+    let replacement = translations[key];
+    if (!replacement && /^Made with Streamlit v\s*/.test(key))
+      replacement = key.replace(/^Made with Streamlit v\s*/, 'Streamlit バージョン ');
+    if (!replacement && /^\d+\s*[KMG]B per file$/.test(key))
+      replacement = '1ファイルあたり ' + key.replace(/ per file$/, '');
+    if (!replacement && /^Limit \d+\s*[KMG]B per file/.test(key))
+      replacement = key.replace(/^Limit (\d+\s*[KMG]B) per file/, '1ファイルあたり上限 $1');
+    if (!replacement && key.startsWith('Help for '))
+      replacement = key.slice(9) + 'の説明';
+    return replacement ? value.replace(key, replacement) : value;
+  }
+  const surfaces = 'header, [role="menu"], [role="dialog"], [role="tooltip"], '
+    + '[data-testid="stMainMenuPopover"], [data-testid="stFileUploader"], '
+    + '[data-testid="stToolbar"], [data-testid="stStatusWidget"]';
+  function apply() {
+    document.querySelectorAll(surfaces).forEach(root => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        // Preserve icon ligatures, code samples, user text, and script/style content.
+        if (node.parentElement?.closest('script, style, pre, code, [data-testid="stIconMaterial"]')) continue;
+        const next = translate(node.nodeValue);
+        if (next !== node.nodeValue) node.nodeValue = next;
+      }
+    });
+    document.querySelectorAll('button, input, [role="menu"], [role="combobox"], a').forEach(el => {
+      for (const attr of ['aria-label', 'title']) {
+        const value = el.getAttribute(attr);
+        if (value && translate(value) !== value) el.setAttribute(attr, translate(value));
+      }
+    });
+  }
+  window.pdf2markdownJapaneseUI?.disconnect();
+  let queued = false;
+  const observer = new MutationObserver(() => {
+    if (!queued) {
+      queued = true;
+      requestAnimationFrame(() => { queued = false; apply(); });
+    }
+  });
+  observer.observe(document.body, {childList: true, subtree: true, characterData: true});
+  window.pdf2markdownJapaneseUI = observer;
+  apply();
+})();
+</script>
