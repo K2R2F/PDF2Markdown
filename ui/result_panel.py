@@ -15,6 +15,8 @@ def save_to_folder(key: str, filename: str, data: str | bytes) -> None:
 
 
 def render_results():
+    if notice := st.session_state.pop('history_notice', None):
+        st.info(notice)
     results = st.session_state.get('results', [])
     st.divider()
     st.subheader('02　変換結果')

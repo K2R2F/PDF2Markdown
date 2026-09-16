@@ -9,6 +9,13 @@ from inputs import PdfInput
 
 
 class AppTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        override = patch.dict('os.environ', {'PDF2MARKDOWN_DATA_DIR': folder.name})
+        override.start()
+        self.addCleanup(override.stop)
+
     def test_environment_panel_detects_missing_tool_and_starts_one_job(self):
         from environment_ui import environment_report
         environment_report.clear()
@@ -33,6 +40,10 @@ class AppTests(unittest.TestCase):
         self.assertEqual([m.value for m in app.metric], ['1', '0', '1'])
         self.assertFalse(app.button(key='save_zip').disabled)
         self.assertFalse(app.button(key='save_1').disabled)
+        from storage import state
+        saved = state.load_batch(state.list_batches()[0][0])
+        self.assertEqual(saved[2], 'failure')
+        self.assertEqual([r.status for r in saved[1]], ['failure', 'success'])
 
     def test_one_click_save_writes_markdown_and_zip_without_reconversion(self):
         app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'app.py'), default_timeout=30).run()

@@ -26,7 +26,7 @@ def main():
     folder.mkdir(parents=True, exist_ok=False)
     git = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True)
     sources = {}
-    for pattern in ('*.py', 'core/*.py', 'environment/*.py', 'ui/*.py', 'tests/*.py', 'audits/*.py'):
+    for pattern in ('*.py', 'core/*.py', 'environment/*.py', 'ui/*.py', 'storage/*.py', 'tests/*.py', 'audits/*.py'):
         for path in ROOT.glob(pattern):
             sources[path.relative_to(ROOT).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     def record(name, value):

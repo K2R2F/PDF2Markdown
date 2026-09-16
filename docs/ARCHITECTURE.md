@@ -21,6 +21,9 @@
 | `core/converter.py` | Docling変換の実行と結果への変換 |
 | `core/markdown_export.py` | 出力名の重複回避とレポート付きZIP生成 |
 | `saving.py` | UTF-8ファイル保存・上書き防止 |
+| `storage/paths.py` | アプリ設置場所から独立したユーザーデータ配置 |
+| `storage/state.py` | 設定・変換履歴のトランザクション保存と復元 |
+| `ui/persistence.py` | 永続化エラー表示と履歴操作 |
 | `environment/catalog.py` | 検証済み依存バージョン・取得元・配置設定 |
 | `environment/detection.py` | パッケージ・Tesseract・言語データの検出 |
 | `environment/downloads.py` | ダウンロード・サイズ制限・ハッシュ照合 |

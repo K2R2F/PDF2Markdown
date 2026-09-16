@@ -187,6 +187,13 @@ class AdversarialJobs(unittest.TestCase):
 
 
 class AdversarialUI(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        override = patch.dict('os.environ', {'PDF2MARKDOWN_DATA_DIR': folder.name})
+        override.start()
+        self.addCleanup(override.stop)
+
     def app(self, urls):
         from streamlit.testing.v1 import AppTest
         from ui.converter_cache import get_converter

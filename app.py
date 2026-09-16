@@ -6,14 +6,17 @@ from ui.input_panel import render_inputs
 from ui.batch_panel import render_batch
 from ui.result_panel import render_results
 from environment_ui import render_environment_panel
+from ui.persistence import initialize_preferences, render_history
 
 
 def main():
     configure_page()
+    initialize_preferences()
     settings = render_settings()
     render_header()
     render_batch(settings, *render_inputs())
     render_results()
+    render_history()
     st.divider()
     render_environment_panel()
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import streamlit as st
 import time
+import uuid
+from ui.persistence import checkpoint
 from core.models import Result
 from core.pdf_validation import MAX_FILES, MAX_TOTAL, check_batch, validate_pdf
 from core.url_input import fetch_pdf
@@ -19,6 +21,9 @@ def render_batch(settings, mode, uploads, archive, url_text):
         # Persist each completed result immediately so a UI rerun does not erase it.
         st.session_state.results = []
         st.session_state.result_settings = settings
+        st.session_state.batch_id = uuid.uuid4().hex
+        batch_status = 'running'
+        checkpoint(batch_status)
         st.session_state.pop('zip_bytes', None)
         st.session_state.pop('saved_files', None)
         items = []
@@ -33,6 +38,7 @@ def render_batch(settings, mode, uploads, archive, url_text):
                             items.append(validate_pdf(upload.name, upload.getvalue()))
                         except Exception as exc:
                             st.session_state.results.append(Result(upload.name, 'failure', error=str(exc)))
+                            checkpoint('running')
                 elif mode == 'ZIP':
                     items = read_zip(archive.getvalue())
                 else:
@@ -54,6 +60,7 @@ def render_batch(settings, mode, uploads, archive, url_text):
                             reason = ('取得がタイムアウトしました。' if isinstance(exc, TimeoutError)
                                       else 'URLの形式・公開アクセス・通信状態・容量制限を確認してください。')
                             st.session_state.results.append(Result(f'URL {index}', 'failure', error=reason))
+                            checkpoint('running')
                         if total_size > MAX_TOTAL:
                             raise ValueError('合計300 MBを超えたため、変換を中止しました。')
                 if items:
@@ -71,13 +78,18 @@ def render_batch(settings, mode, uploads, archive, url_text):
                         status.update(label=f'変換中 {index}/{len(items)} · {item.name}')
                         result = converter.convert(item)
                         st.session_state.results.append(result)
+                        checkpoint('running')
                         st.write(('✓ ' if result.status == 'success' else '△ ') + item.name)
                         progress.progress(index / len(items), text=f'{index}/{len(items)} 件を処理しました')
                 failures = sum(r.status == 'failure' for r in st.session_state.results)
+                batch_status = 'failure' if failures else 'complete'
                 status.update(label=f'処理完了 · {time.monotonic() - started:.1f}秒 / 失敗 {failures}件',
                               state='error' if failures else 'complete', expanded=False)
             except Exception as exc:
+                batch_status = 'failure'
                 st.session_state.results.append(Result('バッチ処理', 'failure', error=str(exc)))
                 st.error(f'処理を開始・継続できませんでした: {exc}')
                 st.caption('モデル取得にはインターネット接続が必要です。OCR依存関係とREADMEのセットアップ手順を確認してください。')
                 status.update(label='処理を中断しました', state='error')
+            finally:
+                checkpoint(batch_status)

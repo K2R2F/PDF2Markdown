@@ -2,8 +2,9 @@
 from pathlib import Path
 
 from inputs import safe_name
+from storage.paths import data_directory
 
-DEFAULT_SAVE_DIR = Path(__file__).resolve().parent / 'output'
+DEFAULT_SAVE_DIR = data_directory() / 'output'
 
 
 def save_file(directory: str, filename: str, data: str | bytes) -> Path:
