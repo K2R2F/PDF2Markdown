@@ -18,3 +18,4 @@ dist/
 *.pt
 *.pth
 *.traineddata
+audits/evidence/

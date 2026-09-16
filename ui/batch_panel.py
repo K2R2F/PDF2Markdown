@@ -12,7 +12,7 @@ from ui.converter_cache import get_converter
 def render_batch(settings, mode, uploads, archive, url_text):
     ready = bool(uploads or archive or url_text.strip())
     environment_job = job_snapshot()
-    setup_busy = environment_job.get('state') == 'running'
+    setup_busy = environment_job.get('state') == 'running' or environment_job.get('blocked', False)
     if setup_busy:
         st.info('環境設定を実行中です。完了後に変換できます。')
     if st.button('Markdownに変換', type='primary', disabled=not ready or setup_busy, use_container_width=True):
@@ -21,7 +21,7 @@ def render_batch(settings, mode, uploads, archive, url_text):
         st.session_state.result_settings = settings
         st.session_state.pop('zip_bytes', None)
         st.session_state.pop('saved_files', None)
-        items, errors = [], []
+        items = []
         started = time.monotonic()
         with st.status('入力を確認しています…', expanded=True) as status:
             try:
@@ -32,7 +32,7 @@ def render_batch(settings, mode, uploads, archive, url_text):
                         try:
                             items.append(validate_pdf(upload.name, upload.getvalue()))
                         except Exception as exc:
-                            errors.append(Result(upload.name, 'failure', error=str(exc)))
+                            st.session_state.results.append(Result(upload.name, 'failure', error=str(exc)))
                 elif mode == 'ZIP':
                     items = read_zip(archive.getvalue())
                 else:
@@ -50,10 +50,12 @@ def render_batch(settings, mode, uploads, archive, url_text):
                             items.append(item)
                         except Exception as exc:
                             # Do not persist signed URLs or credentials in the output manifest.
-                            errors.append(Result(f'URL {index}', 'failure', error=str(exc)))
+                            # Exception text from HTTP libraries can contain full signed URLs.
+                            reason = ('取得がタイムアウトしました。' if isinstance(exc, TimeoutError)
+                                      else 'URLの形式・公開アクセス・通信状態・容量制限を確認してください。')
+                            st.session_state.results.append(Result(f'URL {index}', 'failure', error=reason))
                         if total_size > MAX_TOTAL:
                             raise ValueError('合計300 MBを超えたため、変換を中止しました。')
-                st.session_state.results.extend(errors)
                 if items:
                     check_batch(items)
                     status.update(label='Doclingを準備しています…')
@@ -75,6 +77,7 @@ def render_batch(settings, mode, uploads, archive, url_text):
                 status.update(label=f'処理完了 · {time.monotonic() - started:.1f}秒 / 失敗 {failures}件',
                               state='error' if failures else 'complete', expanded=False)
             except Exception as exc:
+                st.session_state.results.append(Result('バッチ処理', 'failure', error=str(exc)))
                 st.error(f'処理を開始・継続できませんでした: {exc}')
                 st.caption('モデル取得にはインターネット接続が必要です。OCR依存関係とREADMEのセットアップ手順を確認してください。')
                 status.update(label='処理を中断しました', state='error')

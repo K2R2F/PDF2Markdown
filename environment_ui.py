@@ -15,7 +15,7 @@ def environment_report():
 @st.fragment(run_every='2s')
 def render_environment_panel():
     job = job_snapshot()
-    running = job.get('state') == 'running'
+    running = job.get('state') == 'running' or job.get('blocked', False)
     if job and not running and st.session_state.get('last_setup_log') != job['log']:
         environment_report.clear()
         st.session_state.last_setup_log = job['log']
@@ -55,6 +55,10 @@ def render_environment_panel():
             environment_report.clear()
             st.rerun()
         if job:
+            if job.get('error'):
+                st.error(job['error'])
+            if job.get('blocked'):
+                st.error('子プロセスの停止を確認できないため、変換・追加インストールを停止しています。')
             if running:
                 st.info('設定を実行中です。ログを自動更新します。アプリ本体は終了せずにお待ちください。')
             elif job['state'] == 'success':

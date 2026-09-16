@@ -41,7 +41,7 @@ def inspect_environment() -> dict[str, dict]:
                     mismatched.append(f'{name}: 検証済み版は{wanted}')
             except importlib.metadata.PackageNotFoundError:
                 missing.append(name)
-        report[component] = {'ready': not missing, 'detail': ', '.join(
+        report[component] = {'ready': not missing and not mismatched, 'detail': ', '.join(
             f'{name} {version}' for name, version in installed.items()),
             'missing': missing, 'notes': mismatched}
     executable = tesseract_path()

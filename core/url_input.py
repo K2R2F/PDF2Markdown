@@ -7,6 +7,7 @@ import time
 from urllib.parse import unquote, urljoin, urlsplit
 from core.models import PdfInput
 from core.pdf_validation import MAX_FILE, validate_pdf, safe_name
+from core.http_response import expected_body_length, verify_body_length
 
 def public_target(url: str) -> tuple[str, str, int, str]:
     parts = urlsplit(url)
@@ -14,7 +15,7 @@ def public_target(url: str) -> tuple[str, str, int, str]:
         raise ValueError('http:// または https:// のPDF URLを指定してください。')
     if parts.username is not None or parts.password is not None:
         raise ValueError('認証情報を含むURLは使用できません。')
-    port = parts.port or (443 if parts.scheme == 'https' else 80)
+    port = parts.port if parts.port is not None else (443 if parts.scheme == 'https' else 80)
     if port not in (80, 443):
         raise ValueError('URLのポートは80または443にしてください。')
     host = parts.hostname.encode('idna').decode('ascii')
@@ -53,8 +54,8 @@ def fetch_pdf(url: str) -> PdfInput:
                 continue
             if response.status != 200:
                 raise ValueError(f'PDFを取得できませんでした（HTTP {response.status}）。')
-            size = response.getheader('Content-Length')
-            if size and int(size) > MAX_FILE:
+            size = expected_body_length(response)
+            if size is not None and size > MAX_FILE:
                 raise ValueError('URL先のPDFは100 MBを超えています。')
             data = bytearray()
             while chunk := response.read(64 * 1024):
@@ -63,6 +64,7 @@ def fetch_pdf(url: str) -> PdfInput:
                     raise ValueError('URL先のPDFは100 MBを超えています。')
                 if time.monotonic() > deadline:
                     raise TimeoutError('PDF取得が90秒を超えました。')
+            verify_body_length(size, len(data))
             name = safe_name(unquote(parts.path.rsplit('/', 1)[-1]))
             if not name.lower().endswith('.pdf'):
                 name += '.pdf'

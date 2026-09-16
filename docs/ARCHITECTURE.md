@@ -16,6 +16,7 @@
 | `core/pdf_validation.py` | PDF検証、件数・容量制限、名前の正規化 |
 | `core/zip_input.py` | ZIPからのPDF読み込み |
 | `core/url_input.py` | 公開URLの検証とPDF取得 |
+| `core/http_response.py` | HTTP本文の期待サイズ取得と途中切断の検出 |
 | `core/ocr_options.py` | DoclingのOCR・表・画像オプション |
 | `core/converter.py` | Docling変換の実行と結果への変換 |
 | `core/markdown_export.py` | 出力名の重複回避とレポート付きZIP生成 |

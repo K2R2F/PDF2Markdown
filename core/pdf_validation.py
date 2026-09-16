@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, PureWindowsPath
 from core.models import PdfInput
 
 MAX_FILE = 100 * 1024 * 1024
@@ -15,7 +15,7 @@ def safe_name(name: str) -> str:
         return 'document.pdf'
     suffix = PurePosixPath(name).suffix[:12]
     stem = name[:-len(suffix)] if suffix else name
-    if re.fullmatch(r'(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])', stem):
+    if PureWindowsPath(name).is_reserved():
         stem = '_' + stem
     return stem[:160 - len(suffix)] + suffix
 
