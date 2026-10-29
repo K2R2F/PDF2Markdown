@@ -10,6 +10,10 @@ from environment import detection, downloads, installer, jobs
 
 
 class EnvironmentTests(unittest.TestCase):
+    def setUp(self):
+        lease = patch.object(jobs, 'OperationLease')
+        lease.start()
+        self.addCleanup(lease.stop)
     def test_missing_onnx_is_not_ready(self):
         def version(name):
             if name == 'onnxruntime':
@@ -90,14 +94,14 @@ class EnvironmentTests(unittest.TestCase):
     def test_setup_worker_entry_and_completion_release_lock(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.object(jobs, 'RUNTIME', Path(directory)), \
-                 patch.object(jobs.subprocess, 'Popen') as spawn, \
+                 patch.object(jobs, 'ManagedProcess') as spawn, \
                  patch.object(jobs.threading, 'Thread') as thread:
                 spawn.return_value.wait.return_value = 0
                 try:
                     jobs.start_setup('rapidocr')
                     command = spawn.call_args.args[0]
                     self.assertEqual(command, [jobs.sys.executable, '-u',
-                        str(jobs.ROOT / 'environment_support.py'), 'rapidocr'])
+                        str(jobs.ROOT / 'environment_support.py'), '--managed', 'rapidocr'])
                     self.assertTrue(Path(command[2]).is_file())
                     self.assertEqual(jobs.job_snapshot()['state'], 'running')
                     self.assertTrue(jobs.OPERATION_LOCK.locked())

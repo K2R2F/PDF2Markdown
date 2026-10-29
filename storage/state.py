@@ -59,7 +59,7 @@ def save_preferences(settings, directory):
 
 
 def save_batch(batch_id, settings, results, state):
-    if state not in ('running', 'complete', 'failure'):
+    if state not in ('running', 'complete', 'failure', 'cancelled', 'timed_out', 'interrupted'):
         raise ValueError('不正な処理状態です。')
     payload = json.dumps({'settings': asdict(settings), 'results': [asdict(r) for r in results]}, ensure_ascii=False)
     with connection() as db:

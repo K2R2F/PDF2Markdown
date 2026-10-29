@@ -3,7 +3,7 @@ import streamlit as st
 from ui.theme import configure_page, render_header
 from ui.settings_panel import render_settings
 from ui.input_panel import render_inputs
-from ui.batch_panel import render_batch
+from ui.batch_panel import render_batch, render_activity
 from ui.result_panel import render_results
 from environment_ui import render_environment_panel
 from ui.persistence import initialize_preferences, render_history
@@ -15,6 +15,7 @@ def main():
     settings = render_settings()
     render_header()
     render_batch(settings, *render_inputs())
+    render_activity()
     render_results()
     render_history()
     st.divider()

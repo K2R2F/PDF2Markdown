@@ -60,7 +60,8 @@ def render_history():
             if not rows:
                 st.info('保存された履歴はありません。')
                 return
-            labels = {'running': '完了未確認', 'complete': '処理終了', 'failure': '失敗あり'}
+            labels = {'running': '完了未確認', 'complete': '処理終了', 'failure': '失敗あり',
+                      'cancelled': 'キャンセル', 'timed_out': '時間制限で停止', 'interrupted': '前回中断'}
             selected = st.selectbox('復元する履歴', rows,
                 format_func=lambda r: f'{r[1][:19]} UTC / {labels[r[2]]} / {r[0][:8]}', key='history_choice')
             if st.button('選択した結果を復元', key='restore_history'):

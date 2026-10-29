@@ -31,9 +31,17 @@ class AppTests(unittest.TestCase):
         self.assertTrue(app.button[0].disabled)
         app.segmented_control[0].set_value('URL').run()
         app.text_area[0].set_value('https://example.com/good.pdf\nhttps://example.com/bad.pdf').run()
-        with patch('ui.converter_cache.Converter') as constructor:
+        from execution.pipeline import run_batch
+        from storage import state
+        def inline(settings, mode, files, urls, timeout):
+            run_batch(settings, mode, files, urls,
+                lambda results, status: state.save_batch('test-batch', settings, results, status), lambda label: None)
+            return 'test-batch'
+        with patch('execution.pipeline.Converter') as constructor, \
+             patch('ui.batch_panel.controller.start', side_effect=inline), \
+             patch('ui.batch_panel.controller.snapshot', return_value={'id': 'test-batch', 'state': 'failure'}):
             constructor.return_value.convert.return_value = Result('good.pdf', 'success', '# 完了', pages=1)
-            with patch('ui.batch_panel.fetch_pdf', side_effect=[PdfInput('good.pdf', b'%PDF-'), ValueError('HTTP 404')]):
+            with patch('execution.pipeline.fetch_pdf', side_effect=[PdfInput('good.pdf', b'%PDF-'), ValueError('HTTP 404')]):
                 app.button[0].click().run()
         self.assertFalse(app.exception)
         self.assertEqual(len(app.session_state['results']), 2)
@@ -58,6 +66,16 @@ class AppTests(unittest.TestCase):
             app.button(key='save_zip').click().run()
             self.assertTrue((Path(folder) / 'markdown-results.zip').is_file())
             self.assertEqual(app.session_state['results'][0].markdown, '# 日本語\n')
+
+    def test_running_ui_can_request_cancellation(self):
+        with patch('ui.batch_panel.controller.snapshot', return_value={
+                'id': 'live', 'state': 'running', 'label': '変換中'}), \
+             patch('ui.batch_panel.controller.cancel') as cancel:
+            app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'app.py'), default_timeout=30).run()
+            self.assertTrue(app.button[0].disabled)
+            app.button(key='cancel_conversion').click().run()
+            self.assertFalse(app.exception)
+            cancel.assert_called_once_with('live')
 
 
 if __name__ == '__main__':

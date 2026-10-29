@@ -1,95 +1,54 @@
-from __future__ import annotations
-
+"""Nonblocking PDF conversion controls."""
+import sqlite3
 import streamlit as st
-import time
-import uuid
-from ui.persistence import checkpoint
-from core.models import Result
-from core.pdf_validation import MAX_FILES, MAX_TOTAL, check_batch, validate_pdf
-from core.url_input import fetch_pdf
-from core.zip_input import read_zip
 from environment.jobs import job_snapshot
-from ui.converter_cache import get_converter
+from execution import controller
+
 
 def render_batch(settings, mode, uploads, archive, url_text):
     ready = bool(uploads or archive or url_text.strip())
-    environment_job = job_snapshot()
-    setup_busy = environment_job.get('state') == 'running' or environment_job.get('blocked', False)
-    if setup_busy:
-        st.info('環境設定を実行中です。完了後に変換できます。')
-    if st.button('Markdownに変換', type='primary', disabled=not ready or setup_busy, use_container_width=True):
-        # Persist each completed result immediately so a UI rerun does not erase it.
-        st.session_state.results = []
-        st.session_state.result_settings = settings
-        st.session_state.batch_id = uuid.uuid4().hex
-        batch_status = 'running'
-        checkpoint(batch_status)
-        st.session_state.pop('zip_bytes', None)
-        st.session_state.pop('saved_files', None)
-        items = []
-        started = time.monotonic()
-        with st.status('入力を確認しています…', expanded=True) as status:
-            try:
-                if mode == 'ファイル':
-                    if len(uploads) > MAX_FILES or sum(f.size for f in uploads) > MAX_TOTAL:
-                        raise ValueError('一度に30件・合計300 MBまでです。')
-                    for upload in uploads:
-                        try:
-                            items.append(validate_pdf(upload.name, upload.getvalue()))
-                        except Exception as exc:
-                            st.session_state.results.append(Result(upload.name, 'failure', error=str(exc)))
-                            checkpoint('running')
-                elif mode == 'ZIP':
-                    items = read_zip(archive.getvalue())
-                else:
-                    urls = list(dict.fromkeys(line.strip() for line in url_text.splitlines() if line.strip()))
-                    if len(urls) > MAX_FILES:
-                        raise ValueError('URLは30件までです。')
-                    total_size = 0
-                    for index, url in enumerate(urls, 1):
-                        st.write(f'URL {index}/{len(urls)} を取得中')
-                        try:
-                            item = fetch_pdf(url)
-                            total_size += len(item.data)
-                            if total_size > MAX_TOTAL:
-                                raise ValueError('取得したPDFの合計が300 MBを超えました。件数を減らしてください。')
-                            items.append(item)
-                        except Exception as exc:
-                            # Do not persist signed URLs or credentials in the output manifest.
-                            # Exception text from HTTP libraries can contain full signed URLs.
-                            reason = ('取得がタイムアウトしました。' if isinstance(exc, TimeoutError)
-                                      else 'URLの形式・公開アクセス・通信状態・容量制限を確認してください。')
-                            st.session_state.results.append(Result(f'URL {index}', 'failure', error=reason))
-                            checkpoint('running')
-                        if total_size > MAX_TOTAL:
-                            raise ValueError('合計300 MBを超えたため、変換を中止しました。')
-                if items:
-                    check_batch(items)
-                    status.update(label='Doclingを準備しています…')
-                    try:
-                        converter = get_converter(settings, environment_job.get('log', ''))
-                    except Exception as exc:
-                        st.session_state.results.extend(
-                            Result(item.name, 'failure', error=f'変換器の初期化失敗: {exc}') for item in items
-                        )
-                        raise
-                    progress = st.progress(0, text='変換を開始します')
-                    for index, item in enumerate(items, 1):
-                        status.update(label=f'変換中 {index}/{len(items)} · {item.name}')
-                        result = converter.convert(item)
-                        st.session_state.results.append(result)
-                        checkpoint('running')
-                        st.write(('✓ ' if result.status == 'success' else '△ ') + item.name)
-                        progress.progress(index / len(items), text=f'{index}/{len(items)} 件を処理しました')
-                failures = sum(r.status == 'failure' for r in st.session_state.results)
-                batch_status = 'failure' if failures else 'complete'
-                status.update(label=f'処理完了 · {time.monotonic() - started:.1f}秒 / 失敗 {failures}件',
-                              state='error' if failures else 'complete', expanded=False)
-            except Exception as exc:
-                batch_status = 'failure'
-                st.session_state.results.append(Result('バッチ処理', 'failure', error=str(exc)))
-                st.error(f'処理を開始・継続できませんでした: {exc}')
-                st.caption('モデル取得にはインターネット接続が必要です。OCR依存関係とREADMEのセットアップ手順を確認してください。')
-                status.update(label='処理を中断しました', state='error')
-            finally:
-                checkpoint(batch_status)
+    setup, conversion = job_snapshot(), controller.snapshot()
+    busy = any(j.get('state') == 'running' or j.get('blocked') for j in (setup, conversion))
+    minutes = st.number_input('処理全体の時間上限（分）', min_value=1, max_value=120, value=30,
+        help='URL取得・モデル準備・全PDFの変換を含みます。超過時は停止し、完了済みの結果を残します。')
+    if st.button('Markdownに変換', type='primary', disabled=not ready or busy, use_container_width=True):
+        try:
+            files = [(f.name, f.getvalue()) for f in uploads] if mode == 'ファイル' else []
+            if mode == 'ZIP' and archive:
+                files = [(archive.name, archive.getvalue())]
+            urls = [u.strip() for u in url_text.splitlines() if u.strip()] if mode == 'URL' else []
+            batch_id = controller.start(settings, mode, files, urls, int(minutes) * 60)
+            st.session_state.active_conversion = batch_id
+            st.session_state.results = []
+            st.session_state.result_settings = settings
+            st.session_state.pop('zip_bytes', None)
+            st.session_state.pop('saved_files', None)
+        except Exception as exc:
+            st.error(f'変換を開始できませんでした: {exc}')
+
+
+@st.fragment(run_every='1s')
+def render_activity():
+    job = controller.snapshot()
+    if not job:
+        return
+    if job.get('state') == 'running':
+        st.info(job.get('label', '変換中'))
+        if st.button('変換をキャンセル', key='cancel_conversion'):
+            controller.cancel(job['id'])
+            st.warning('停止を要求しました。プロセスツリーの終了を確認しています。')
+    elif job.get('blocked'):
+        st.error(job.get('error') or '停止確認が取れないため追加処理を停止しています。')
+    elif st.session_state.get('active_conversion') == job['id']:
+        from storage import state
+        try:
+            settings, results, _ = state.load_batch(job['id'])
+            st.session_state.results = results
+            st.session_state.result_settings = settings
+            st.session_state.pop('zip_bytes', None)
+            st.session_state.pop('saved_files', None)
+            st.session_state.pop('active_conversion', None)
+            st.session_state.conversion_notice = job.get('error', '')
+            st.rerun()
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            st.error(f'結果を読み込めませんでした: {exc}')

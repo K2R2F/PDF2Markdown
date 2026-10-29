@@ -24,9 +24,9 @@ def main():
     run_id = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8]
     folder = ROOT / 'audits' / 'evidence' / run_id
     folder.mkdir(parents=True, exist_ok=False)
-    git = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True)
+    git = subprocess.run(['git', '-c', f'safe.directory={ROOT.as_posix()}', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True)
     sources = {}
-    for pattern in ('*.py', 'core/*.py', 'environment/*.py', 'ui/*.py', 'storage/*.py', 'tests/*.py', 'audits/*.py'):
+    for pattern in ('*.py', 'core/*.py', 'environment/*.py', 'ui/*.py', 'storage/*.py', 'execution/*.py', 'tests/*.py', 'tests/fixtures/*.py', 'audits/*.py'):
         for path in ROOT.glob(pattern):
             sources[path.relative_to(ROOT).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     def record(name, value):
@@ -36,11 +36,14 @@ def main():
         'command': command, 'timeout_seconds': args.timeout, 'git_head': git.stdout.strip(),
         'source_sha256': sources, 'python': sys.version})
     status, code = 'error', None
+    temporary_root = ROOT / 'tmp' / 'audit-temp'
+    temporary_root.mkdir(parents=True, exist_ok=True)
     # Started without finished means interrupted/unknown, never a successful run.
     with (folder / 'output.txt').open('xb') as output:
         try:
             child = subprocess.Popen(command, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT,
-                env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+                env={**os.environ, 'PYTHONIOENCODING': 'utf-8',
+                     'TEMP': str(temporary_root), 'TMP': str(temporary_root)})
             try:
                 code = child.wait(timeout=args.timeout)
                 status = 'passed' if code == 0 else 'failed'

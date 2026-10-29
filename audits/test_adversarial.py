@@ -125,23 +125,28 @@ class AdversarialIO(unittest.TestCase):
 
 
 class AdversarialJobs(unittest.TestCase):
+    def setUp(self):
+        lease = patch.object(jobs, 'OperationLease')
+        lease.start()
+        self.addCleanup(lease.stop)
+
     def tearDown(self):
         jobs.JOB.clear()
         if jobs.OPERATION_LOCK.locked(): jobs.OPERATION_LOCK.release()
 
     def test_A09_thread_start_failure_does_not_leave_live_installer_unlocked(self):
         with tempfile.TemporaryDirectory() as folder:
-            with patch.object(jobs, 'RUNTIME', Path(folder)), patch.object(jobs.subprocess, 'Popen') as spawn, \
+            with patch.object(jobs, 'RUNTIME', Path(folder)), patch.object(jobs, 'ManagedProcess') as spawn, \
                  patch.object(jobs.threading, 'Thread') as thread:
                 thread.return_value.start.side_effect = RuntimeError('simulated thread creation failure')
                 with self.assertRaises(RuntimeError): jobs.start_setup('rapidocr')
-                stopped = spawn.return_value.terminate.called or spawn.return_value.kill.called
+                stopped = spawn.return_value.close.called
                 self.assertTrue(stopped or jobs.OPERATION_LOCK.locked(),
                     'Installer remains live while the operation lock is released')
 
     def test_A10_child_wait_failure_is_recorded_as_terminal_failure(self):
         with tempfile.TemporaryDirectory() as folder:
-            with patch.object(jobs, 'RUNTIME', Path(folder)), patch.object(jobs.subprocess, 'Popen') as spawn, \
+            with patch.object(jobs, 'RUNTIME', Path(folder)), patch.object(jobs, 'ManagedProcess') as spawn, \
                  patch.object(jobs.threading, 'Thread') as thread:
                 spawn.return_value.wait.side_effect = OSError('simulated wait failure')
                 jobs.start_setup('rapidocr')
@@ -154,13 +159,13 @@ class AdversarialJobs(unittest.TestCase):
     def test_A11_spawn_failure_releases_lock(self):
         with tempfile.TemporaryDirectory() as folder:
             with patch.object(jobs, 'RUNTIME', Path(folder)), \
-                 patch.object(jobs.subprocess, 'Popen', side_effect=OSError('simulated spawn denial')):
+                 patch.object(jobs, 'ManagedProcess', side_effect=OSError('simulated spawn denial')):
                 with self.assertRaises(OSError): jobs.start_setup('rapidocr')
                 self.assertFalse(jobs.OPERATION_LOCK.locked())
 
     def test_A12_nonzero_child_exit_remains_failure(self):
         with tempfile.TemporaryDirectory() as folder:
-            with patch.object(jobs, 'RUNTIME', Path(folder)), patch.object(jobs.subprocess, 'Popen') as spawn, \
+            with patch.object(jobs, 'RUNTIME', Path(folder)), patch.object(jobs, 'ManagedProcess') as spawn, \
                  patch.object(jobs.threading, 'Thread') as thread:
                 spawn.return_value.wait.return_value = 1
                 jobs.start_setup('rapidocr')
@@ -175,10 +180,10 @@ class AdversarialJobs(unittest.TestCase):
 
     def test_A19_failed_cleanup_keeps_exclusion_and_failure(self):
         with tempfile.TemporaryDirectory() as folder:
-            with patch.object(jobs, 'RUNTIME', Path(folder)), patch.object(jobs.subprocess, 'Popen') as spawn, \
+            with patch.object(jobs, 'RUNTIME', Path(folder)), patch.object(jobs, 'ManagedProcess') as spawn, \
                  patch.object(jobs.threading, 'Thread') as thread:
                 thread.return_value.start.side_effect = RuntimeError('simulated thread failure')
-                spawn.return_value.wait.side_effect = OSError('simulated unreapable child')
+                spawn.return_value.close.side_effect = OSError('simulated unreapable child')
                 with self.assertRaises(RuntimeError): jobs.start_setup('rapidocr')
                 self.assertTrue(jobs.OPERATION_LOCK.locked())
                 self.assertTrue(jobs.job_snapshot()['blocked'])
@@ -196,20 +201,29 @@ class AdversarialUI(unittest.TestCase):
 
     def app(self, urls):
         from streamlit.testing.v1 import AppTest
-        from ui.converter_cache import get_converter
-        get_converter.clear()
         app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'app.py'), default_timeout=30).run()
         app.segmented_control[0].set_value('URL').run()
         app.text_area[0].set_value(urls).run()
         return app
 
+    def run_inline(self, app):
+        from execution.pipeline import run_batch
+        from storage import state
+        def inline(settings, mode, files, urls, timeout):
+            run_batch(settings, mode, files, urls,
+                lambda results, status: state.save_batch('audit-batch', settings, results, status), lambda label: None)
+            return 'audit-batch'
+        with patch('ui.batch_panel.controller.start', side_effect=inline), patch(
+                'ui.batch_panel.controller.snapshot', return_value={'id': 'audit-batch', 'state': 'failure'}):
+            app.button[0].click().run()
+
     def test_A14_batch_limit_abort_retains_failure_record(self):
         app = self.app('https://example.org/a.pdf\nhttps://example.org/b.pdf')
-        with patch('ui.batch_panel.MAX_TOTAL', 8), patch('ui.batch_panel.fetch_pdf',
+        with patch('execution.pipeline.MAX_TOTAL', 8), patch('execution.pipeline.fetch_pdf',
                 side_effect=[PdfInput('a.pdf', b'%PDF-'), PdfInput('b.pdf', b'%PDF-')]):
-            app.button[0].click().run()
+            self.run_inline(app)
         self.assertFalse(app.exception)
-        self.assertTrue(app.error)
+        self.assertTrue(app.warning)
         self.assertTrue(any(r.status == 'failure' for r in app.session_state['results']),
                         'Batch stopped but the results contain no failure record')
 
@@ -220,7 +234,7 @@ class AdversarialUI(unittest.TestCase):
         # Real HTTPConnection rejects the space before attempting a connection.
         with patch.object(url_input.socket, 'getaddrinfo', return_value=records), \
              patch.object(url_input.socket, 'create_connection', side_effect=AssertionError('Network forbidden')):
-            app.button[0].click().run()
+            self.run_inline(app)
         self.assertFalse(app.exception)
         results = app.session_state['results']
         self.assertEqual(len(results), 1)
